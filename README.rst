@@ -114,10 +114,11 @@ Configuration
 -------------
 
 Configure the middleware's behaviour in your Django settings. You must set at
-least one of three following settings:
+least one of four following settings:
 
 * ``CORS_ALLOWED_ORIGINS``
 * ``CORS_ALLOWED_ORIGIN_REGEXES``
+* ``CORS_ALLOWED_ORIGIN_PATTERNS``
 * ``CORS_ALLOW_ALL_ORIGINS``
 
 ``CORS_ALLOWED_ORIGINS: Sequence[str]``
@@ -165,6 +166,35 @@ Example:
     ]
 
 Previously this setting was called ``CORS_ORIGIN_REGEX_WHITELIST``, which still works as an alias, with the new name taking precedence.
+
+``CORS_ALLOWED_ORIGIN_PATTERNS: Sequence[dict]``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A list of structured origin patterns, useful for allowing subdomains without writing regular expressions.
+Each pattern explicitly declares its scheme, host pattern, and inclusive port range.
+Defaults to ``[]``.
+
+Host patterns match complete domain labels:
+
+* ``*.example.com`` matches direct subdomains such as ``a.example.com``, but not ``example.com`` or ``a.b.example.com``.
+* ``**.example.com`` matches descendants at any depth, such as ``a.example.com`` and ``a.b.example.com``, but not ``example.com`` or ``badexample.com``.
+* A host without a wildcard matches exactly.
+* IPv6 literals must be written without surrounding brackets, for example ``::1``.
+
+Origins are normalized before matching and before the authorized value is returned:
+international domain names are converted to IDNA ASCII, IPv6 addresses use their compressed form, and an explicit HTTP port 80 or HTTPS port 443 is omitted.
+Invalid origins cannot be repaired into a match; user information, paths, fragments, multiple origins, and ports outside 1-65535 are rejected.
+The special origin ``null`` still has to be explicitly listed in ``CORS_ALLOWED_ORIGINS``.
+
+Example:
+
+.. code-block:: python
+
+    CORS_ALLOWED_ORIGIN_PATTERNS = [
+        {"scheme": "https", "host": "*.example.com", "port_range": (443, 443)},
+        {"scheme": "https", "host": "**.example.org", "port_range": (8000, 8999)},
+        {"scheme": "https", "host": "::1", "port_range": (443, 443)},
+    ]
 
 ``CORS_ALLOW_ALL_ORIGINS: bool``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

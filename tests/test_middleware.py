@@ -25,6 +25,112 @@ class ShortCircuitMiddleware(MiddlewareMixin):
 
 
 class CorsMiddlewareTests(TestCase):
+    def test_origin_pattern_matrix(self) -> None:
+        cases = [
+            ("example.com", "example.com", True),
+            ("example.com", "a.example.com", False),
+            ("example.com", "a.b.example.com", False),
+            ("example.com", "badexample.com", False),
+            ("*.example.com", "example.com", False),
+            ("*.example.com", "a.example.com", True),
+            ("*.example.com", "a.b.example.com", False),
+            ("*.example.com", "badexample.com", False),
+            ("**.example.com", "example.com", False),
+            ("**.example.com", "a.example.com", True),
+            ("**.example.com", "a.b.example.com", True),
+            ("**.example.com", "badexample.com", False),
+        ]
+        for host_pattern, host, allowed in cases:
+            with self.subTest(host_pattern=host_pattern, host=host):
+                with override_settings(
+                    CORS_ALLOWED_ORIGIN_PATTERNS=[
+                        {
+                            "scheme": "https",
+                            "host": host_pattern,
+                            "port_range": (443, 443),
+                        }
+                    ]
+                ):
+                    resp = self.client.get(
+                        "/", headers={"origin": f"https://{host}"}
+                    )
+                if allowed:
+                    assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == f"https://{host}"
+                else:
+                    assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "example.com", "port_range": (8000, 8100)}
+        ]
+    )
+    def test_origin_pattern_port_range(self) -> None:
+        allowed = self.client.get(
+            "/", headers={"origin": "https://example.com:8080"}
+        )
+        rejected = self.client.get(
+            "/", headers={"origin": "https://example.com:8443"}
+        )
+        assert allowed[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://example.com:8080"
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in rejected
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "**.example.com", "port_range": (443, 443)}
+        ]
+    )
+    def test_origin_pattern_normalizes_and_reflects_valid_origin(self) -> None:
+        resp = self.client.get(
+            "/",
+            headers={"origin": "https://a.b.example.com:443"},
+        )
+        assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://a.b.example.com"
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "例え.jp", "port_range": (443, 443)},
+            {"scheme": "https", "host": "::1", "port_range": (443, 443)},
+        ]
+    )
+    def test_origin_pattern_normalizes_idna_and_ipv6_origin(self) -> None:
+        idna_response = self.client.get(
+            "/", headers={"origin": "https://xn--r8jz45g.jp:443"}
+        )
+        ipv6_response = self.client.get(
+            "/", headers={"origin": "https://[0:0:0:0:0:0:0:1]:443"}
+        )
+        assert idna_response[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://xn--r8jz45g.jp"
+        assert ipv6_response[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://[::1]"
+
+    @override_settings(CORS_ALLOW_ALL_ORIGINS=True)
+    def test_allow_all_does_not_emit_null_without_explicit_permission(self) -> None:
+        resp = self.client.get("/", headers={"origin": "null"})
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOW_ALL_ORIGINS=True,
+        CORS_ALLOWED_ORIGINS=["null"],
+    )
+    def test_allow_all_emits_null_with_explicit_permission(self) -> None:
+        resp = self.client.get("/", headers={"origin": "null"})
+        assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == "null"
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_REGEXES=[r".*"],
+    )
+    def test_regex_does_not_match_malformed_origin(self) -> None:
+        origins = [
+            "https://user@example.com",
+            "https://example.com/path",
+            "https://example.com#fragment",
+            "https://example.com,https://other.example.com",
+            "https://example.com:65536",
+        ]
+        for origin in origins:
+            with self.subTest(origin=origin):
+                resp = self.client.get("/", headers={"origin": origin})
+                assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
     def test_get_no_origin(self):
         resp = self.client.get("/")
         assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp

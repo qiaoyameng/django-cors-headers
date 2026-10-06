@@ -10,6 +10,12 @@ from django.http.response import HttpResponseBase
 from django.utils.cache import patch_vary_headers
 
 from corsheaders.conf import conf
+from corsheaders.origin_patterns import (
+    OriginPattern,
+    ParsedOrigin,
+    compile_origin_pattern,
+    parse_origin,
+)
 from corsheaders.signals import check_request_enabled
 
 ACCESS_CONTROL_ALLOW_ORIGIN = "access-control-allow-origin"
@@ -35,6 +41,7 @@ class CorsMiddleware:
     ) -> None:
         self.get_response = get_response
         self.async_mode = iscoroutinefunction(self.get_response)
+        self._compiled_patterns: tuple[object, tuple[OriginPattern, ...]] | None = None
 
         if self.async_mode:
             # Mark the class as async-capable, but do the actual switch
@@ -96,22 +103,42 @@ class CorsMiddleware:
         if not origin:
             return response
 
-        try:
-            url = urlsplit(origin)
-        except ValueError:
+        parsed_origin = parse_origin(origin)
+        special_origin = origin in {"null", "file://"}
+        if parsed_origin is None and not special_origin:
             return response
+        url = None
+        if parsed_origin is not None:
+            try:
+                url = urlsplit(origin)
+            except ValueError:
+                return response
 
         if (
             not conf.CORS_ALLOW_ALL_ORIGINS
-            and not self.origin_found_in_white_lists(origin, url)
+            and not self.origin_found_in_white_lists(
+                origin, url, parsed_origin, special_origin
+            )
             and not self.check_signal(request)
         ):
             return response
+        if (
+            conf.CORS_ALLOW_ALL_ORIGINS
+            and origin == "null"
+            and origin not in conf.CORS_ALLOWED_ORIGINS
+        ):
+            return response
 
-        if conf.CORS_ALLOW_ALL_ORIGINS and not conf.CORS_ALLOW_CREDENTIALS:
+        if (
+            conf.CORS_ALLOW_ALL_ORIGINS
+            and not conf.CORS_ALLOW_CREDENTIALS
+            and origin != "null"
+        ):
             response[ACCESS_CONTROL_ALLOW_ORIGIN] = "*"
         else:
-            response[ACCESS_CONTROL_ALLOW_ORIGIN] = origin
+            response[ACCESS_CONTROL_ALLOW_ORIGIN] = (
+                parsed_origin.canonical if parsed_origin is not None else origin
+            )
 
         if conf.CORS_ALLOW_CREDENTIALS:
             response[ACCESS_CONTROL_ALLOW_CREDENTIALS] = "true"
@@ -135,18 +162,60 @@ class CorsMiddleware:
 
         return response
 
-    def origin_found_in_white_lists(self, origin: str, url: SplitResult) -> bool:
+    def origin_found_in_white_lists(
+        self,
+        origin: str,
+        url: SplitResult | None,
+        parsed_origin: ParsedOrigin | None,
+        special_origin: bool,
+    ) -> bool:
+        if special_origin:
+            return origin in conf.CORS_ALLOWED_ORIGINS
         return (
-            (origin == "null" and origin in conf.CORS_ALLOWED_ORIGINS)
-            or self._url_in_whitelist(url)
-            or self.regex_domain_match(origin)
+            url is not None
+            and (
+                self._url_in_whitelist(url, parsed_origin)
+                or self.regex_domain_match(origin, parsed_origin)
+                or self.origin_pattern_match(parsed_origin)
+            )
         )
 
-    def regex_domain_match(self, origin: str) -> bool:
+    def _url_in_whitelist(
+        self, url: SplitResult, parsed_origin: ParsedOrigin | None
+    ) -> bool:
+        if parsed_origin is None:
+            return False
+        origins = [urlsplit(o) for o in conf.CORS_ALLOWED_ORIGINS]
+        return any(
+            allowed.scheme == url.scheme and allowed.netloc == url.netloc
+            for allowed in origins
+        )
+
+    def regex_domain_match(
+        self, origin: str, parsed_origin: ParsedOrigin | None
+    ) -> bool:
+        if parsed_origin is None:
+            return False
         return any(
             re.match(domain_pattern, origin)
             for domain_pattern in conf.CORS_ALLOWED_ORIGIN_REGEXES
         )
+
+    def origin_pattern_match(self, parsed_origin: ParsedOrigin | None) -> bool:
+        if parsed_origin is None:
+            return False
+        return any(
+            pattern.matches(parsed_origin) for pattern in self._origin_patterns()
+        )
+
+    def _origin_patterns(self) -> tuple[OriginPattern, ...]:
+        source = tuple(conf.CORS_ALLOWED_ORIGIN_PATTERNS)
+        if self._compiled_patterns is None or self._compiled_patterns[0] is not source:
+            self._compiled_patterns = (
+                source,
+                tuple(compile_origin_pattern(pattern) for pattern in source),
+            )
+        return self._compiled_patterns[1]
 
     def is_enabled(self, request: HttpRequest) -> bool:
         return bool(
@@ -156,10 +225,3 @@ class CorsMiddleware:
     def check_signal(self, request: HttpRequest) -> bool:
         signal_responses = check_request_enabled.send(sender=None, request=request)
         return any(return_value for function, return_value in signal_responses)
-
-    def _url_in_whitelist(self, url: SplitResult) -> bool:
-        origins = [urlsplit(o) for o in conf.CORS_ALLOWED_ORIGINS]
-        return any(
-            origin.scheme == url.scheme and origin.netloc == url.netloc
-            for origin in origins
-        )

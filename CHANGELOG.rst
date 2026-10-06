@@ -15,6 +15,11 @@ Unreleased
 
 * Add Django 6.1 support.
 
+* Add the ``CORS_ALLOWED_ORIGIN_PATTERNS`` setting for structured scheme,
+  host, and port-range matching. ``*.`` matches one domain label and ``**.``
+  matches one or more labels; origins are IDNA, IPv6, and default-port
+  normalized before matching.
+
 * Drop Django 4.2 to 5.1 support.
 
 * Tighten some system checks for settings to catch when a string has been provided instead of a sequence of strings, such as for ``CORS_ALLOW_METHODS = "GET"``.

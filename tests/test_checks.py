@@ -120,6 +120,14 @@ class ChecksTests(SimpleTestCase):
         errors = self.check_error_codes(["corsheaders.E014"])
         assert "in CORS_ALLOWED_ORIGINS" in errors[0].msg
 
+    @override_settings(CORS_ALLOWED_ORIGINS=["https://user@example.com"])
+    def test_cors_allowed_origins_userinfo(self):
+        self.check_error_codes(["corsheaders.E013"])
+
+    @override_settings(CORS_ALLOWED_ORIGINS=["https://example.com:65536"])
+    def test_cors_allowed_origins_invalid_port(self):
+        self.check_error_codes(["corsheaders.E013"])
+
     @override_settings(CORS_ORIGIN_WHITELIST=["https://example.com/foobar"])
     def test_cors_allowed_origins_path_old_name(self):
         errors = self.check_error_codes(["corsheaders.E014"])
@@ -137,6 +145,47 @@ class ChecksTests(SimpleTestCase):
     @override_settings(CORS_ALLOWED_ORIGIN_REGEXES=[re.compile(r"a")])
     def test_cors_allowed_origin_regexes_regex(self):
         self.check_error_codes([])
+
+    @override_settings(CORS_ALLOWED_ORIGIN_PATTERNS=object)
+    def test_cors_allowed_origin_patterns_non_sequence(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(CORS_ALLOWED_ORIGIN_PATTERNS=[object])
+    def test_cors_allowed_origin_patterns_non_mapping(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "*.example.com", "port_range": (443, 443)}
+        ]
+    )
+    def test_cors_allowed_origin_patterns_allowed(self):
+        self.check_error_codes([])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "*.example.com"}
+        ]
+    )
+    def test_cors_allowed_origin_patterns_missing_key(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "*.example.com", "port_range": (444, 443)}
+        ]
+    )
+    def test_cors_allowed_origin_patterns_invalid_port_range(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "*.example.com", "port_range": (443, 443)},
+            {"scheme": "HTTPS", "host": "*.example.com", "port_range": (443, 443)},
+        ]
+    )
+    def test_cors_allowed_origin_patterns_duplicate(self):
+        self.check_error_codes(["corsheaders.E017"])
 
     @override_settings(CORS_EXPOSE_HEADERS=object)
     def test_cors_expose_headers_non_sequence(self):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -9,6 +9,11 @@ from django.conf import settings
 from django.core.checks import CheckMessage, Error
 
 from corsheaders.conf import conf
+from corsheaders.origin_patterns import (
+    OriginPatternError,
+    compile_origin_pattern,
+    parse_origin,
+)
 
 
 def check_settings(**kwargs: Any) -> list[CheckMessage]:
@@ -93,7 +98,9 @@ def check_settings(**kwargs: Any) -> list[CheckMessage]:
             if origin in special_origin_values:
                 continue
             parsed = urlsplit(origin)
+            has_invalid_origin_part = False
             if parsed.scheme == "" or parsed.netloc == "":
+                has_invalid_origin_part = True
                 errors.append(
                     Error(
                         f"Origin {repr(origin)} in {allowed_origins_alias} is missing scheme or netloc",
@@ -105,16 +112,26 @@ def check_settings(**kwargs: Any) -> list[CheckMessage]:
                     )
                 )
             else:
-                # Only do this check in this case because if the scheme is not
-                # provided, netloc ends up in path
                 for part in ("path", "query", "fragment"):
                     if getattr(parsed, part) != "":
+                        has_invalid_origin_part = True
                         errors.append(
                             Error(
                                 f"Origin {repr(origin)} in {allowed_origins_alias} should not have {part}",
                                 id="corsheaders.E014",
                             )
                         )
+
+            if (
+                not has_invalid_origin_part
+                and (parsed.username is not None or parse_origin(origin) is None)
+            ):
+                errors.append(
+                    Error(
+                        f"Origin {repr(origin)} in {allowed_origins_alias} is not a valid origin",
+                        id="corsheaders.E013",
+                    )
+                )
 
     if hasattr(settings, "CORS_ALLOWED_ORIGIN_REGEXES"):
         allowed_regexes_alias = "CORS_ALLOWED_ORIGIN_REGEXES"
@@ -127,6 +144,59 @@ def check_settings(**kwargs: Any) -> list[CheckMessage]:
                 id="corsheaders.E007",
             )
         )
+
+    if not isinstance(conf.CORS_ALLOWED_ORIGIN_PATTERNS, Sequence) or isinstance(
+        conf.CORS_ALLOWED_ORIGIN_PATTERNS, (str, bytes)
+    ) or not all(
+        isinstance(pattern, Mapping)
+        for pattern in conf.CORS_ALLOWED_ORIGIN_PATTERNS
+    ):
+        errors.append(
+            Error(
+                "CORS_ALLOWED_ORIGIN_PATTERNS should be a sequence of mappings.",
+                id="corsheaders.E016",
+            )
+        )
+    else:
+        compiled_patterns = []
+        for index, pattern in enumerate(conf.CORS_ALLOWED_ORIGIN_PATTERNS):
+            try:
+                compiled_pattern = compile_origin_pattern(pattern)
+            except OriginPatternError as exc:
+                errors.append(
+                    Error(
+                        (
+                            "Origin pattern at index "
+                            f"{index} in CORS_ALLOWED_ORIGIN_PATTERNS is invalid: "
+                            f"{exc}"
+                        ),
+                        id="corsheaders.E016",
+                    )
+                )
+            else:
+                compiled_patterns.append((index, compiled_pattern))
+
+        seen_patterns: set[tuple[object, ...]] = set()
+        for index, pattern in compiled_patterns:
+            signature = (
+                pattern.scheme,
+                pattern.host,
+                pattern.wildcard,
+                pattern.is_ipv6,
+                pattern.port_range,
+            )
+            if signature in seen_patterns:
+                errors.append(
+                    Error(
+                        (
+                            "Origin pattern at index "
+                            f"{index} in CORS_ALLOWED_ORIGIN_PATTERNS duplicates an earlier pattern"
+                        ),
+                        id="corsheaders.E017",
+                    )
+                )
+            else:
+                seen_patterns.add(signature)
 
     if not is_sequence(conf.CORS_EXPOSE_HEADERS, str):
         errors.append(
