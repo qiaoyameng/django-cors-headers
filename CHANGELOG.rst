@@ -5,6 +5,10 @@ Changelog
 Unreleased
 ----------
 
+* Add ``CORS_ALLOWED_ORIGIN_PATTERNS``, a structured alternative to ``CORS_ALLOWED_ORIGIN_REGEXES``.
+  Each pattern declares a scheme, a host with optional single-label (``*``) or multi-label (``**``) wildcards, and optional port ranges, with fixed IDNA/IPv6/default-port normalization.
+  New system checks ``corsheaders.E016``, ``corsheaders.E017``, and ``corsheaders.W001`` report invalid or duplicate patterns.
+
 * Drop Python 3.10 support.
 
 * Support Python 3.15.

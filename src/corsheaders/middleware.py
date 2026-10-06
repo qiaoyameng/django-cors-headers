@@ -10,6 +10,7 @@ from django.http.response import HttpResponseBase
 from django.utils.cache import patch_vary_headers
 
 from corsheaders.conf import conf
+from corsheaders.patterns import origin_matches_patterns
 from corsheaders.signals import check_request_enabled
 
 ACCESS_CONTROL_ALLOW_ORIGIN = "access-control-allow-origin"
@@ -140,6 +141,7 @@ class CorsMiddleware:
             (origin == "null" and origin in conf.CORS_ALLOWED_ORIGINS)
             or self._url_in_whitelist(url)
             or self.regex_domain_match(origin)
+            or self.pattern_domain_match(origin)
         )
 
     def regex_domain_match(self, origin: str) -> bool:
@@ -147,6 +149,9 @@ class CorsMiddleware:
             re.match(domain_pattern, origin)
             for domain_pattern in conf.CORS_ALLOWED_ORIGIN_REGEXES
         )
+
+    def pattern_domain_match(self, origin: str) -> bool:
+        return origin_matches_patterns(origin, conf.CORS_ALLOWED_ORIGIN_PATTERNS)
 
     def is_enabled(self, request: HttpRequest) -> bool:
         return bool(

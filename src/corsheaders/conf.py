@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from re import Pattern
-from typing import cast
+from typing import Any, cast
 
 from django.conf import settings
 
@@ -58,6 +58,10 @@ class Settings:
             "CORS_ALLOWED_ORIGIN_REGEXES",
             getattr(settings, "CORS_ORIGIN_REGEX_WHITELIST", ()),
         )
+
+    @property
+    def CORS_ALLOWED_ORIGIN_PATTERNS(self) -> Sequence[dict[str, Any]]:
+        return getattr(settings, "CORS_ALLOWED_ORIGIN_PATTERNS", ())
 
     @property
     def CORS_EXPOSE_HEADERS(self) -> Sequence[str]:

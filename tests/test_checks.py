@@ -138,6 +138,59 @@ class ChecksTests(SimpleTestCase):
     def test_cors_allowed_origin_regexes_regex(self):
         self.check_error_codes([])
 
+    @override_settings(CORS_ALLOWED_ORIGIN_PATTERNS=object)
+    def test_cors_allowed_origin_patterns_non_sequence(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(CORS_ALLOWED_ORIGIN_PATTERNS=["https://example.com"])
+    def test_cors_allowed_origin_patterns_non_dict(self):
+        self.check_error_codes(["corsheaders.E016"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "https", "host": "example.com"}]
+    )
+    def test_cors_allowed_origin_patterns_valid(self):
+        self.check_error_codes([])
+
+    @override_settings(CORS_ALLOWED_ORIGIN_PATTERNS=[{"host": "example.com"}])
+    def test_cors_allowed_origin_patterns_missing_scheme(self):
+        errors = self.check_error_codes(["corsheaders.E017"])
+        assert "entry 0" in errors[0].msg
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "https", "host": "exa mple.com"}]
+    )
+    def test_cors_allowed_origin_patterns_bad_host(self):
+        self.check_error_codes(["corsheaders.E017"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "example.com", "ports": 0}
+        ]
+    )
+    def test_cors_allowed_origin_patterns_bad_port(self):
+        self.check_error_codes(["corsheaders.E017"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "example.com", "path": "/x"}
+        ]
+    )
+    def test_cors_allowed_origin_patterns_unknown_key(self):
+        self.check_error_codes(["corsheaders.E017"])
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "https", "host": "example.com"},
+            {"scheme": "https", "host": "EXAMPLE.com."},
+        ]
+    )
+    def test_cors_allowed_origin_patterns_duplicate(self):
+        errors = check_settings()
+        assert len(errors) == 1
+        assert errors[0].id == "corsheaders.W001"
+        assert "entry 1" in errors[0].msg
+
     @override_settings(CORS_EXPOSE_HEADERS=object)
     def test_cors_expose_headers_non_sequence(self):
         self.check_error_codes(["corsheaders.E008"])

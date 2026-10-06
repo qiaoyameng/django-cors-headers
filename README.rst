@@ -118,6 +118,7 @@ least one of three following settings:
 
 * ``CORS_ALLOWED_ORIGINS``
 * ``CORS_ALLOWED_ORIGIN_REGEXES``
+* ``CORS_ALLOWED_ORIGIN_PATTERNS``
 * ``CORS_ALLOW_ALL_ORIGINS``
 
 ``CORS_ALLOWED_ORIGINS: Sequence[str]``
@@ -166,6 +167,38 @@ Example:
 
 Previously this setting was called ``CORS_ORIGIN_REGEX_WHITELIST``, which still works as an alias, with the new name taking precedence.
 
+``CORS_ALLOWED_ORIGIN_PATTERNS: Sequence[dict]``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A list of structured origin patterns, for when you want wildcard subdomain matching without writing regexes.
+Defaults to ``[]``.
+
+Each pattern is a dict with these keys:
+
+* ``scheme`` (required): a scheme like ``"https"``, or ``"*"`` to match any scheme.
+* ``host`` (required): a hostname, optionally with wildcard labels.
+  ``*`` matches exactly one domain label (a direct subdomain), whilst ``**`` matches one or more labels (all descendant subdomains) and may only appear as the leftmost label.
+  Wildcards must be whole labels, and never match the bare domain.
+* ``ports`` (optional): a port number, a ``(min, max)`` range tuple, or a list mixing both.
+  When omitted, only the default port for the origin's scheme matches (e.g. 443 for HTTPS).
+
+Example:
+
+.. code-block:: python
+
+    CORS_ALLOWED_ORIGIN_PATTERNS = [
+        # Any single subdomain of example.com, on HTTPS only
+        {"scheme": "https", "host": "*.example.com"},
+        # Any descendant subdomain of example.org, on ports 8000-9000
+        {"scheme": "https", "host": "**.example.org", "ports": [(8000, 9000)]},
+    ]
+
+Hostnames are normalized before matching: lowercased, IDNA-encoded, with IPv6 literals compressed and default ports implied.
+So for example ``{"scheme": "https", "host": "bücher.de"}`` matches an origin of ``https://xn--bcher-kva.de``.
+
+Origins are parsed strictly: those with userinfo, a path, query, fragment, an invalid port, or multiple space-separated values never match, and are never reflected in the ``access-control-allow-origin`` header.
+The ``null`` origin is never matched by patterns; allow it explicitly in ``CORS_ALLOWED_ORIGINS`` if required.
+
 ``CORS_ALLOW_ALL_ORIGINS: bool``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -174,7 +207,7 @@ Other settings restricting allowed origins will be ignored.
 Defaults to ``False``.
 
 Setting this to ``True`` can be *dangerous*, as it allows any website to make cross-origin requests to yours.
-Generally you'll want to restrict the list of allowed origins with ``CORS_ALLOWED_ORIGINS`` or ``CORS_ALLOWED_ORIGIN_REGEXES``.
+Generally you'll want to restrict the list of allowed origins with ``CORS_ALLOWED_ORIGINS``, ``CORS_ALLOWED_ORIGIN_REGEXES``, or ``CORS_ALLOWED_ORIGIN_PATTERNS``.
 
 Previously this setting was called ``CORS_ORIGIN_ALLOW_ALL``, which still works as an alias, with the new name taking precedence.
 

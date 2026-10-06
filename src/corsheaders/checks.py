@@ -6,9 +6,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from django.conf import settings
-from django.core.checks import CheckMessage, Error
+from django.core.checks import CheckMessage, Error, Warning
 
 from corsheaders.conf import conf
+from corsheaders.patterns import PatternError, parse_pattern
 
 
 def check_settings(**kwargs: Any) -> list[CheckMessage]:
@@ -127,6 +128,35 @@ def check_settings(**kwargs: Any) -> list[CheckMessage]:
                 id="corsheaders.E007",
             )
         )
+
+    if not is_sequence(conf.CORS_ALLOWED_ORIGIN_PATTERNS, dict):
+        errors.append(
+            Error(
+                "CORS_ALLOWED_ORIGIN_PATTERNS should be a sequence of dicts.",
+                id="corsheaders.E016",
+            )
+        )
+    else:
+        seen_patterns: set[object] = set()
+        for index, raw_pattern in enumerate(conf.CORS_ALLOWED_ORIGIN_PATTERNS):
+            try:
+                pattern = parse_pattern(raw_pattern)
+            except PatternError as exc:
+                errors.append(
+                    Error(
+                        f"CORS_ALLOWED_ORIGIN_PATTERNS entry {index} is invalid: {exc}",
+                        id="corsheaders.E017",
+                    )
+                )
+                continue
+            if pattern in seen_patterns:
+                errors.append(
+                    Warning(
+                        f"CORS_ALLOWED_ORIGIN_PATTERNS entry {index} duplicates an earlier pattern.",
+                        id="corsheaders.W001",
+                    )
+                )
+            seen_patterns.add(pattern)
 
     if not is_sequence(conf.CORS_EXPOSE_HEADERS, str):
         errors.append(

@@ -257,6 +257,93 @@ class CorsMiddlewareTests(TestCase):
         )
         assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
 
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "https", "host": "*.example.com"}],
+    )
+    def test_get_origin_matched_by_pattern(self):
+        resp = self.client.get("/", headers={"origin": "https://foo.example.com"})
+        assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://foo.example.com"
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "https", "host": "*.example.com"}],
+    )
+    def test_get_origin_not_matched_by_pattern(self):
+        resp = self.client.get(
+            "/", headers={"origin": "https://foo.bar.example.com"}
+        )
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "https", "host": "**.example.com"}],
+    )
+    def test_get_origin_matched_by_multi_level_pattern(self):
+        resp = self.client.get(
+            "/", headers={"origin": "https://foo.bar.example.com"}
+        )
+        assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == "https://foo.bar.example.com"
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "http", "host": "example.com", "ports": [(8000, 9000)]}
+        ],
+    )
+    def test_get_origin_matched_by_pattern_port_range(self):
+        resp = self.client.get("/", headers={"origin": "http://example.com:8080"})
+        assert resp[ACCESS_CONTROL_ALLOW_ORIGIN] == "http://example.com:8080"
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[
+            {"scheme": "http", "host": "example.com", "ports": [(8000, 9000)]}
+        ],
+    )
+    def test_get_origin_not_matched_by_pattern_port_range(self):
+        resp = self.client.get("/", headers={"origin": "http://example.com:80"})
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "*", "host": "**"}],
+    )
+    def test_get_origin_with_userinfo_not_matched(self):
+        resp = self.client.get(
+            "/", headers={"origin": "https://user@foo.example.com"}
+        )
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "*", "host": "**"}],
+    )
+    def test_get_origin_with_path_not_matched(self):
+        resp = self.client.get(
+            "/", headers={"origin": "https://foo.example.com/evil"}
+        )
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "*", "host": "**"}],
+    )
+    def test_get_multiple_origins_not_matched(self):
+        resp = self.client.get(
+            "/",
+            headers={"origin": "https://foo.example.com https://bar.example.com"},
+        )
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "*", "host": "**"}],
+    )
+    def test_get_origin_with_invalid_port_not_matched(self):
+        resp = self.client.get(
+            "/", headers={"origin": "https://foo.example.com:99999"}
+        )
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
+    @override_settings(
+        CORS_ALLOWED_ORIGIN_PATTERNS=[{"scheme": "*", "host": "**"}],
+    )
+    def test_get_null_origin_not_matched_by_pattern(self):
+        resp = self.client.get("/", headers={"origin": "null"})
+        assert ACCESS_CONTROL_ALLOW_ORIGIN not in resp
+
     def test_options_empty_request_method(self):
         resp = self.client.options(
             "/",
